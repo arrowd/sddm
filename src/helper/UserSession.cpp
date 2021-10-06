@@ -62,6 +62,9 @@ namespace SDDM {
 
     bool UserSession::start() {
         auto helper = qobject_cast<HelperApp*>(parent());
+        // TODO: Vogtinator has
+        // QProcessEnvironment env = m_process->processEnvironment();
+        // here. What's correct?
         QProcessEnvironment env = helper->session()->processEnvironment();
 
         setup();
@@ -94,6 +97,33 @@ namespace SDDM {
                 const auto program = args.takeFirst();
                 m_process->start(program, args);
             } else {
+                // Create the Xauthority file
+                QByteArray cookie = qobject_cast<HelperApp*>(parent())->cookie();
+                if (cookie.isEmpty())
+                    return false;
+
+                // Place it into /tmp, which is guaranteed to be read/writeable by
+                // everyone while having the sticky bit set to avoid messing with
+                // other's files.
+                m_xauthFile.setFileTemplate(QStringLiteral("/tmp/xauth_XXXXXX"));
+
+                if (!m_xauthFile.open()) {
+                    qCritical() << "Could not create the Xauthority file";
+                    return false;
+                }
+
+                QString display = m_process->processEnvironment().value(QStringLiteral("DISPLAY"));
+                qDebug() << "Adding cookie to" << m_xauthFile.fileName();
+
+                if (!XAuth::writeCookieToFile(display, m_xauthFile.fileName(), cookie)) {
+                    qCritical() << "Failed to write the Xauthority file";
+                    m_xauthFile.close();
+                    return false;
+                }
+
+                env.insert(QStringLiteral("XAUTHORITY"), m_xauthFile.fileName());
+                m_process->setProcessEnvironment(env);
+
                 const QString cmd = QStringLiteral("%1 \"%2\"").arg(mainConfig.X11.SessionCommand.get()).arg(m_path);
                 qInfo() << "Starting X11 user session:" << cmd;
                 m_process->start(mainConfig.X11.SessionCommand.get(), QStringList{m_path});
@@ -263,12 +293,25 @@ namespace SDDM {
             qCritical() << "setusercontext(NULL, *, " << pw.pw_uid << ", LOGIN_SETALL) failed for user: " << username;
             exit(Auth::HELPER_OTHER_ERROR);
         }
+
+        const int xauthHandle = m_xauthFile.handle();
+        if (xauthHandle != -1 && fchown(xauthHandle, pw.pw_uid, pw.pw_gid) != 0) {
+            qCritical() << "fchown failed for" << m_xauthFile.fileName();
+            exit(Auth::HELPER_OTHER_ERROR);
+        }
 #else
         if (setgid(pw.pw_gid) != 0) {
             qCritical() << "setgid(" << pw.pw_gid << ") failed for user: " << username;
             exit(Auth::HELPER_OTHER_ERROR);
         }
         qputenv("XDG_RUNTIME_DIR", QByteArrayLiteral("/run/user/") + QByteArray::number(pw.pw_uid));
+
+        // TODO: deduplicate this with above?
+        const int xauthHandle = m_xauthFile.handle();
+        if (xauthHandle != -1 && fchown(xauthHandle, pw.pw_uid, pw.pw_gid) != 0) {
+            qCritical() << "fchown failed for" << m_xauthFile.fileName();
+            exit(Auth::HELPER_OTHER_ERROR);
+        }
 
 #ifdef USE_PAM
 
@@ -364,7 +407,7 @@ namespace SDDM {
 
         // set X authority for X11 sessions only
         if (x11UserSession) {
-            QString cookie = qobject_cast<HelperApp*>(parent())->cookie();
+            QByteArray cookie = qobject_cast<HelperApp*>(parent())->cookie();
             if (!cookie.isEmpty()) {
                 QString file = processEnvironment().value(QStringLiteral("XAUTHORITY"));
                 QString display = processEnvironment().value(QStringLiteral("DISPLAY"));
@@ -373,7 +416,8 @@ namespace SDDM {
                 QFileInfo finfo(file);
                 QDir().mkpath(finfo.absolutePath());
 
-                XAuth::addCookieToFile(display, file, cookie);
+                // TODO: is this change correct?
+                XAuth::writeCookieToFile(display, file, cookie);
             }
         }
     }

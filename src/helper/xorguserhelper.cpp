@@ -187,10 +187,11 @@ bool XOrgUserHelper::startServer(const QString &cmd)
     // Generate xauthority file
     // For the X server's copy, the display number doesn't matter.
     // An empty file would result in no access control!
-    if (!m_xauth.addCookie(m_display)) {
-        qCritical("Failed to write xauth file");
-        return false;
-    }
+    // TODO: What to do there, now that we can't append to xauth file?
+//     if (!m_xauth.addCookie(m_display)) {
+//         qCritical("Failed to write xauth file");
+//         return false;
+//     }
 
     // Close our pipe
     ::close(pipeFds[0]);

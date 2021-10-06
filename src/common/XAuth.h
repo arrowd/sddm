@@ -34,20 +34,19 @@ public:
     void setAuthDirectory(const QString &path);
 
     QString authPath() const;
-    QString cookie() const;
+    QByteArray cookie() const;
 
     void setup();
-    bool addCookie(const QString &display);
 
-    static bool addCookieToFile(const QString &display,
-                                const QString &fileName,
-                                const QString &cookie);
-
+    bool writeCookieToFile(const QString &display);
+    static bool writeCookieToFile(const QString &display,
+                                  const QString &fileName,
+                                  const QByteArray& cookie);
 private:
     bool m_setup = false;
     QString m_authDir;
     QString m_authPath;
-    QString m_cookie;
+    QByteArray m_cookie;
 };
 
 } // namespace SDDM

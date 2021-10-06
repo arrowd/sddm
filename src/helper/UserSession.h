@@ -24,6 +24,7 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QProcess>
+#include <QtCore/QTemporaryFile>
 
 namespace SDDM {
     class HelperApp;
@@ -56,6 +57,7 @@ namespace SDDM {
         void setup();
 
         QString m_path { };
+        QTemporaryFile m_xauthFile;
         QProcess *m_process = nullptr;
         XOrgUserHelper *m_xorgUser = nullptr;
         WaylandHelper *m_wayland = nullptr;

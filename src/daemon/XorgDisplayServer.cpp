@@ -61,7 +61,7 @@ namespace SDDM {
         return QStringLiteral("x11");
     }
 
-    QString XorgDisplayServer::cookie() const {
+    QByteArray XorgDisplayServer::cookie() const {
         return m_xauth.cookie();
     }
 
@@ -87,8 +87,7 @@ namespace SDDM {
         // generate auth file.
         // For the X server's copy, the display number doesn't matter.
         // An empty file would result in no access control!
-        m_display = QStringLiteral(":0");
-        if(!m_xauth.addCookie(m_display)) {
+        if(!m_xauth.writeCookieToFile(QStringLiteral(":0"))) {
             qCritical() << "Failed to write xauth file";
             return false;
         }
@@ -171,7 +170,7 @@ namespace SDDM {
         // The file is also used by the greeter, which does care about the
         // display number. Write the proper entry, if it's different.
         if(m_display != QStringLiteral(":0")) {
-            if(!m_xauth.addCookie(m_display)) {
+            if(!m_xauth.writeCookieToFile(m_display)) {
                 qCritical() << "Failed to write xauth file";
                 stop();
                 return false;

@@ -21,12 +21,20 @@
 #include <QDebug>
 #include <QDir>
 #include <QUuid>
+#include <X11/Xauth.h>
 
 #include "Configuration.h"
 #include "Constants.h"
 #include "XAuth.h"
 
 #include <random>
+#include <unistd.h>
+
+#if !defined(HOST_NAME_MAX) && defined(_POSIX_HOST_NAME_MAX)
+// On FreeBSD HOST_NAME_MAX is not defined, intentionally,
+// to make applications use sysctl() to get real values .. let's not.
+#define HOST_NAME_MAX _POSIX_HOST_NAME_MAX
+#endif
 
 namespace SDDM {
 
@@ -55,7 +63,7 @@ QString XAuth::authPath() const
     return m_authPath;
 }
 
-QString XAuth::cookie() const
+QByteArray XAuth::cookie() const
 {
     return m_cookie;
 }
@@ -77,51 +85,75 @@ void XAuth::setup()
     // Generate cookie
     std::random_device rd;
     std::mt19937 gen(rd());
+    // TODO: Vogtinator has
+    // std::uniform_int_distribution<> dis(0, 0xFF);
+    // here. What's correct?
     std::uniform_int_distribution<> dis(0, 15);
 
-    // Reseve 32 bytes
-    m_cookie.reserve(32);
+    m_cookie.reserve(16);
 
-    // Create a random hexadecimal number
-    const char *digits = "0123456789abcdef";
-    for (int i = 0; i < 32; ++i)
-        m_cookie[i] = QLatin1Char(digits[dis(gen)]);
+    for(int i = 0; i < 16; i++)
+        m_cookie[i] = dis(gen);
 }
 
-bool XAuth::addCookie(const QString &display)
+bool XAuth::writeCookieToFile(const QString &display)
 {
-    if (!m_setup) {
-        qWarning("Please setup xauth before adding a cookie");
+    if(display.size() < 2 || display[0] != QLatin1Char(':') || m_cookie.count() != 16)
+        return false;
+
+    // Truncate the file. We don't support merging like the xauth tool does.
+    FILE * const authFp = fopen(qPrintable(m_authPath), "wb");
+    if (authFp == nullptr)
+        return false;
+
+    char localhost[HOST_NAME_MAX + 1] = "";
+    if (gethostname(localhost, HOST_NAME_MAX) < 0)
+        strcpy(localhost, "localhost");
+
+    ::Xauth auth = {};
+    char cookieName[] = "MIT-MAGIC-COOKIE-1";
+
+    // Skip the ':'
+    QByteArray displayNumberUtf8 = display.midRef(1).toUtf8();
+
+    auth.family = FamilyLocal;
+    auth.address = localhost;
+    auth.address_length = strlen(auth.address);
+    auth.number = displayNumberUtf8.data();
+    auth.number_length = displayNumberUtf8.size();
+    auth.name = cookieName;
+    auth.name_length = sizeof(cookieName) - 1;
+    auth.data = const_cast<char*>(m_cookie.data());
+    auth.data_length = m_cookie.count();
+
+    if (XauWriteAuth(authFp, &auth) == 0) {
+        fclose(authFp);
         return false;
     }
 
-    return XAuth::addCookieToFile(display, m_authPath, m_cookie);
+    // Write the same entry again, just with FamilyWild
+    auth.family = FamilyWild;
+    auth.address_length = 0;
+    if (XauWriteAuth(authFp, &auth) == 0) {
+        fclose(authFp);
+        return false;
+    }
+
+    bool success = fflush(authFp) != EOF;
+
+    fclose(authFp);
+
+    return success;
 }
 
-bool XAuth::addCookieToFile(const QString &display, const QString &fileName,
-                            const QString &cookie)
-{
-    qDebug() << "Adding cookie to" << fileName;
+bool XAuth::writeCookieToFile(const QString &display,
+                              const QString &fileName,
+                              const QByteArray& cookie) {
+    XAuth auth;
+    auth.m_cookie = cookie;
+    auth.m_authPath = fileName;
 
-    // Touch file
-    QFile file_handler(fileName);
-    file_handler.open(QIODevice::Append);
-    file_handler.close();
-
-    QString cmd = QStringLiteral("%1 -f %2 -q").arg(mainConfig.X11.XauthPath.get()).arg(fileName);
-
-    // Execute xauth
-    FILE *fp = ::popen(qPrintable(cmd), "w");
-
-    // Check file
-    if (!fp)
-        return false;
-    fprintf(fp, "remove %s\n", qPrintable(display));
-    fprintf(fp, "add %s . %s\n", qPrintable(display), qPrintable(cookie));
-    fprintf(fp, "exit\n");
-
-    // Close pipe
-    return pclose(fp) == 0;
+    return auth.writeCookieToFile(display);
 }
 
 } // namespace SDDM
