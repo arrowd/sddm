@@ -3,6 +3,7 @@ include_directories(
     "${CMAKE_SOURCE_DIR}/src/auth"
     "${CMAKE_BINARY_DIR}/src/common"
     "${LIBXCB_INCLUDE_DIR}"
+    "${LIBXAU_INCLUDE_DIRS}"
 )
 
 set(DAEMON_SOURCES
@@ -70,7 +71,8 @@ target_link_libraries(sddm
                       Qt5::DBus
                       Qt5::Network
                       Qt5::Qml
-                      ${LIBXCB_LIBRARIES})
+                      ${LIBXCB_LIBRARIES}
+                      ${LIBXAU_LINK_LIBRARIES})
 if(PAM_FOUND)
     target_link_libraries(sddm ${PAM_LIBRARIES})
 else()

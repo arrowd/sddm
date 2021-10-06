@@ -92,6 +92,9 @@ check_function_exists(getspnam HAVE_GETSPNAM)
 # XCB
 find_package(XCB REQUIRED)
 
+# Xau
+pkg_check_modules(LIBXAU REQUIRED "xau")
+
 # XKB
 find_package(XKB REQUIRED)
 
